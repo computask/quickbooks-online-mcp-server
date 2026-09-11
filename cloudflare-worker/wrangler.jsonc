@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "qbo-invoice-mcp",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "2a0f6a1413b14ac1a4cd9409f0fe2112" },
+    { "binding": "QBO_TOKEN_KV", "id": "b697aa2839cc4c33b5250bbb08bbe5c9" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "AUDIT_DB",
+      "database_name": "qbo-invoice-mcp-audit",
+      "database_id": "9e9b6818-0d30-46cd-95e3-bc4844e61129",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "QUICKBOOKS_ENVIRONMENT": "production",
+    "EXPECTED_COMPANY_NAME": "CompuTask Ltd",
+    "QBO_SEND_ENABLED": "false"
+  }
+}
