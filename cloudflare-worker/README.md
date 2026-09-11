@@ -11,10 +11,14 @@ Safety boundaries:
 - Zero-value invoices are hard-blocked.
 - Sending requires an explicit destination, a caller-supplied idempotency key,
   and `recipient_verified: true`.
-- A destination different from QBO's billing email needs an explicit allowlist
-  entry and override reason.
-- D1 records a send attempt before the QBO call; a retry with the same key is
-  never sent a second time automatically.
+- A destination different from QBO's billing email needs an explicit
+  `QBO_RECIPIENT_ALLOWLIST` entry and override reason. QBO temporarily changes
+  `BillEmail` for that override; the Worker restores the original address with
+  the current `SyncToken` and verifies it before reporting success.
+- D1 atomically claims a send attempt before the QBO call. A retry with the
+  same key, a different key for the same invoice, or any uncertain prior
+  attempt is blocked for manual review; it is never sent a second time
+  automatically.
 - The endpoint only sends the normal QBO invoice PDF. Direct Debit/GoCardless
   collection is not implemented here.
 
@@ -23,6 +27,14 @@ Required Wrangler secrets:
 ```text
 QUICKBOOKS_CLIENT_ID
 QUICKBOOKS_CLIENT_SECRET
+```
+
+Optional alternate-recipient authorization is configured as a secret JSON
+object keyed by immutable invoice ID or customer ID, for example
+`{"12345":["accounts@example.com"]}`:
+
+```text
+QBO_RECIPIENT_ALLOWLIST
 ```
 
 After deploying, register this callback in the Intuit production app:

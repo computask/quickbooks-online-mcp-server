@@ -2,6 +2,7 @@ import type { Env } from "./env";
 
 export type QboInvoice = {
   Id?: string;
+  SyncToken?: string;
   DocNumber?: string;
   TotalAmt?: number;
   Balance?: number;
@@ -165,15 +166,40 @@ export async function sendInvoice(
   env: Env,
   realmId: string,
   invoiceId: string,
-  sendTo: string,
-): Promise<{ emailStatus?: string }> {
+  sendTo?: string,
+): Promise<{ emailStatus?: string; syncToken?: string; billingEmail?: string }> {
+  const query = sendTo ? `?sendTo=${encodeURIComponent(sendTo)}` : "";
   const payload = (await qboFetch(
     env,
     realmId,
-    `invoice/${encodeURIComponent(invoiceId)}/send?sendTo=${encodeURIComponent(sendTo)}`,
+    `invoice/${encodeURIComponent(invoiceId)}/send${query}`,
     { method: "POST" },
-  )) as { Invoice?: { EmailStatus?: string } };
-  return { emailStatus: payload.Invoice?.EmailStatus };
+  )) as { Invoice?: QboInvoice };
+  return {
+    emailStatus: payload.Invoice?.EmailStatus,
+    syncToken: payload.Invoice?.SyncToken,
+    billingEmail: payload.Invoice?.BillEmail?.Address,
+  };
+}
+
+export async function restoreInvoiceBillingEmail(
+  env: Env,
+  realmId: string,
+  invoiceId: string,
+  syncToken: string,
+  billingEmail: string,
+): Promise<QboInvoice> {
+  const payload = (await qboFetch(env, realmId, "invoice", {
+    method: "POST",
+    body: JSON.stringify({
+      Id: invoiceId,
+      SyncToken: syncToken,
+      sparse: true,
+      BillEmail: { Address: billingEmail },
+    }),
+  })) as { Invoice?: QboInvoice };
+  if (!payload.Invoice) throw new QboError("qbo_invoice_restore_failed", 502);
+  return payload.Invoice;
 }
 
 export async function exchangeIntuitCode(

@@ -11,6 +11,11 @@ tokens.json
 
 start.cmd
 
+# Wrangler local state and generated diagnostics
+cloudflare-worker/.wrangler/
+cloudflare-worker/worker-configuration.d.ts
+cloudflare-worker/*.cpuprofile
+
 # Local capture output (may contain real account balances)
 capture-*.txt
 
