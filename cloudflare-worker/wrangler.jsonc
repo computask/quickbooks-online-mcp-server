@@ -19,6 +19,7 @@
   ],
   "vars": {
     "QUICKBOOKS_ENVIRONMENT": "production",
+    "QUICKBOOKS_REDIRECT_URI": "https://qbo-invoice-mcp.sam-c6d.workers.dev/",
     "EXPECTED_COMPANY_NAME": "CompuTask Ltd",
     "QBO_SEND_ENABLED": "false"
   }

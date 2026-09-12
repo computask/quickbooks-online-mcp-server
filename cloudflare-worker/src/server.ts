@@ -241,11 +241,24 @@ const apiHandler = {
   },
 };
 
-export default new OAuthProvider({
+// Keep the resource advertised during MCP authorization identical to the
+// protected endpoint ChatGPT connects to.  Without this explicit value the
+// OAuth provider derives the resource from the origin, while ChatGPT binds
+// the authorization request to `/mcp`; that mismatch can make the callback
+// handoff fail before the token exchange.
+const MCP_RESOURCE = "https://qbo-invoice-mcp.sam-c6d.workers.dev/mcp";
+
+const oauthProvider = new OAuthProvider({
   authorizeEndpoint: "/authorize",
   tokenEndpoint: "/oauth/token",
   clientRegistrationEndpoint: "/oauth/register",
   apiRoute: "/mcp",
+  resourceMetadata: {
+    resource: MCP_RESOURCE,
+    authorization_servers: [MCP_RESOURCE.replace(/\/mcp$/, "")],
+    bearer_methods_supported: ["header"],
+    resource_name: "CompuTask QBO Invoice MCP",
+  },
   apiHandler,
   defaultHandler: {
     async fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -253,3 +266,43 @@ export default new OAuthProvider({
     },
   },
 });
+
+// ChatGPT posts the authorization response as a nested URL.  In some browser
+// flows the authorization code is consequently form-encoded twice (the value
+// reaches this endpoint as `qbo%3A...` instead of `qbo:...`).  Normalize that
+// representation before handing the request to the OAuth provider.  The
+// provider still performs the full grant, PKCE, client, and redirect checks;
+// this only repairs transport encoding and cannot mint or broaden a grant.
+const worker = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname === "/oauth/token" && request.method === "POST") {
+      const contentType = request.headers.get("Content-Type") || "";
+      if (contentType.split(";")[0].trim().toLowerCase() === "application/x-www-form-urlencoded") {
+        const form = await request.clone().formData();
+        const code = form.get("code");
+        if (typeof code === "string" && !code.includes(":") && /%3a/i.test(code)) {
+          try {
+            const normalizedCode = decodeURIComponent(code);
+            if (normalizedCode !== code) {
+              form.set("code", normalizedCode);
+              const body = new URLSearchParams();
+              for (const [key, value] of form.entries()) {
+                if (typeof value === "string") body.append(key, value);
+              }
+              const headers = new Headers(request.headers);
+              headers.set("Content-Type", "application/x-www-form-urlencoded");
+              request = new Request(request, { body: body.toString(), headers });
+            }
+          } catch {
+            // Leave malformed input unchanged; the provider returns its normal
+            // invalid-grant response.
+          }
+        }
+      }
+    }
+    return oauthProvider.fetch(request, env, ctx);
+  },
+};
+
+export default worker;

@@ -1,5 +1,5 @@
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Env } from "./env";
 import {
   exchangeIntuitCode,
@@ -9,6 +9,7 @@ import {
 } from "./qbo";
 
 type AuthEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
+type AuthContext = Context<{ Bindings: AuthEnv }>;
 const app = new Hono<{ Bindings: AuthEnv }>();
 
 function escapeHtml(value: string): string {
@@ -48,7 +49,7 @@ app.get("/authorize", async (c) => {
   return c.redirect(uri.toString(), 302);
 });
 
-app.get("/callback", async (c) => {
+async function handleCallback(c: AuthContext) {
   const code = c.req.query("code");
   const state = c.req.query("state");
   const realmId = c.req.query("realmId");
@@ -76,7 +77,10 @@ app.get("/callback", async (c) => {
     });
     const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
       request: saved.oauthReqInfo,
-      userId: `qbo:${realmId}`,
+      // The OAuth provider encodes userId, grantId, and the secret as
+      // colon-delimited authorization-code parts. Keep this internal user ID
+      // colon-free so the generated code remains parseable.
+      userId: `qbo-${realmId}`,
       metadata: { label: companyName, clientName: "QBO Invoice MCP" },
       scope: saved.oauthReqInfo.scope,
       props: { realmId, companyName },
@@ -86,8 +90,18 @@ app.get("/callback", async (c) => {
     const code = error instanceof QboError ? error.code : "qbo_authorization_failed";
     return new Response(code, { status: error instanceof QboError ? error.status : 502 });
   }
-});
+}
 
-app.get("/", (c) => c.html(`<!doctype html><meta charset="utf-8"><title>QBO Invoice MCP</title><h1>QBO Invoice MCP</h1><p>OAuth-protected QuickBooks invoice tools are available at <code>/mcp</code>.</p><p>Only ${escapeHtml(c.env.EXPECTED_COMPANY_NAME)} is accepted.</p>`));
+app.get("/callback", handleCallback);
+
+app.get("/", async (c) => {
+  // Some managed browser environments block non-root callback paths. Accepting
+  // the same validated callback parameters at the root keeps the OAuth flow
+  // usable without weakening state, company, or token checks.
+  if (c.req.query("code") || c.req.query("state") || c.req.query("realmId")) {
+    return handleCallback(c);
+  }
+  return c.html(`<!doctype html><meta charset="utf-8"><title>QBO Invoice MCP</title><h1>QBO Invoice MCP</h1><p>OAuth-protected QuickBooks invoice tools are available at <code>/mcp</code>.</p><p>Only ${escapeHtml(c.env.EXPECTED_COMPANY_NAME)} is accepted.</p>`);
+});
 
 export { app as AuthHandler };
